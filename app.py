@@ -196,3 +196,84 @@ def remove_table():
     cur.close()
     conn.close()
 #=========================================================================
+
+#manage orders
+
+#add orders
+def add_order():
+    while True:
+        table_id = input("enter table id:")
+        if table_id.lower() == "cancel":
+            print("order cancelled.")
+            return
+        try:
+            table_id = int(table_id)
+            break
+        except ValueError:
+            print("ID must be a number. Try again.")
+
+    while True:
+        order_status = input("enter order status:")
+        if order_status not in ["preparing" , "ready", "received", "paid"]:
+            print("enter a valid status")
+            continue
+        break
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute ("select * from tables where id = %s  and status = 'available'",
+                 (table_id,))
+    exist = cur.fetchone()
+    if exist:
+        cur.execute (
+         "INSERT INTO orders (table_id , status) VALUES (%s,%s)",
+         (table_id,order_status)
+         )
+        order_id = cur.lastrowid
+        print(f"order #{order_id} registered for table #{table_id}")
+        cur.execute (
+            "update tables set status = 'occupied' where id = %s",
+            (table_id,))
+    else:
+        print("table not found or occupied")
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def update_order_status():
+    while True:
+        or_id = input("enter order id:")
+        if or_id.lower() == "cancel":
+            print("edit order status cancelled.")
+            return
+        try:
+            or_id = int(or_id)
+            break
+        except ValueError:
+            print("ID must be a number. Try again.")
+     
+#get new status
+    while True:
+        new_status = input("enter new status:")
+        if new_status not in ["preparing" , "ready", "received", "paid"]:
+            print("enter a valid status")
+            continue
+        break
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute ("update orders set status = %s where id = %s",
+             (new_status, or_id))
+    if new_status == 'paid':
+        cur.execute (
+            "update tables set status = 'available' from orders where order_id = %s and tables.id= orders.table_id",
+            (or_id,))
+    
+    if cur.rowcount == 0:
+        print("id not found")
+    else:
+        print("status updated")
+    conn.commit()
+    cur.close()
+    conn.close()
+#============================================================
