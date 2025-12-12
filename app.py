@@ -82,6 +82,7 @@ def show_menu():
     cur = conn.cursor()
     cur.execute ("select * from menu_items")
     print("\n---Food Menu---")
+    print("===================================")
     print("  ID  |  Name  |  Price  ")
     print("--------------------------")
 
@@ -89,6 +90,7 @@ def show_menu():
         print(f"{food[0]} |  {food[1]} |  {food[2]}$")
     cur.close()
     conn.close()
+    print("===================================")
 #=========================================
 
 #mange tables
@@ -99,6 +101,7 @@ def show_tables_status():
     cur = conn.cursor()
     cur.execute("select * from tables")
     print("\n---Table status🪑---")
+    print("===================================")
     print("  ID  |  Table Number  |  status  ")
     print("-----------------------------------")
 
@@ -106,7 +109,7 @@ def show_tables_status():
         print(f"{i[0]} |  {i[1]} |  {i[2]}")
     cur.close()
     conn.close()
-
+    print("===================================")
 #edit table status
 def update_table_status():
     while True:
@@ -228,7 +231,7 @@ def add_order():
          "INSERT INTO orders (table_id , status) VALUES (%s,%s)",
          (table_id,order_status)
          )
-        order_id = cur.lastrowid
+        order_id = cur.lastrowid or "unknown"
         print(f"order #{order_id} registered for table #{table_id}")
         cur.execute (
             "update tables set status = 'occupied' where id = %s",
@@ -266,7 +269,7 @@ def update_order_status():
              (new_status, or_id))
     if new_status == 'paid':
         cur.execute (
-            "update tables set status = 'available' from orders where order_id = %s and tables.id= orders.table_id",
+            "update tables set status = 'available' from orders where orders.id = %s and tables.id= orders.table_id",
             (or_id,))
     
     if cur.rowcount == 0:
@@ -277,3 +280,69 @@ def update_order_status():
     cur.close()
     conn.close()
 #============================================================
+#Reporting 
+
+#show active order
+def show_active_orders():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("select * from orders where status not in ('paid')")
+    print("\n---Active Orders---")
+    print("===================================")
+    print("  ID  |  tables_id  |  order_time  |  status  ")
+    print("------------------------------------------------")
+
+    for i in cur:
+        print(f"{i[0]} |  {i[1]} |  {i[2]}  |  {i[3]}  ")
+    cur.close()
+    conn.close()
+    print("===================================")
+
+#show details order
+def show_order_details():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "select order_details.*, menu_items.name, menu_items.price from order_details join menu_items on order_details.item_id = menu_items.id")
+    print("\n---Order details---")
+    print("===================================")
+    print("  ID  |  order_id  |  item_id  |  name  |  quantity  |  price  ")
+    print("-------------------------------------------------------------------------")
+
+    for i in cur:
+        print(f"{i[0]} |  {i[1]} |  {i[2]}  |  {i[3]}  |  {i[4]}  |  {i[5]}  |")
+    cur.close()
+    conn.close()
+    print("===================================")
+
+#report daily sales    
+def get_daily_sales_report():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute (
+        """select Date(orders.order_time) as order_date,
+           count(distinct orders.id) as total_orders,
+           sum(order_details.quantity * menu_items.price)
+           from orders
+           join order_details on orders.id = order_details.order_id 
+           join menu_items on order_details.item_id = menu_items.id 
+           where orders.status = 'paid' and Date(orders.order_time) = current_date 
+           group by Date(orders.order_time)"""
+    )
+    row = cur.fetchone()
+    cur.execute (
+        """select  COUNT(*) 
+           FROM orders 
+           WHERE DATE(order_time) = CURRENT_DATE AND status != 'paid'""")
+    unpaid_count = cur.fetchone()
+    print("\n---Daily Sales---")
+    print("===================================")
+    print(f"Date: {row[0]}")
+    print(f"Total Orders: {row[1]}")
+    print(f"Paid Orders: {row[1]:}")
+    print(f"Unpaid Orders: {unpaid_count[0]}")
+    print(f"Total Sales: {row[2]:,}")
+    cur.close()
+    conn.close()
+    print("===================================")
+#==========================================================================
