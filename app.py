@@ -205,43 +205,77 @@ def remove_table():
 #add orders
 def add_order():
     while True:
-        table_id = input("enter table id:")
-        if table_id.lower() == "cancel":
+        table_num = input("enter table number:")
+        if table_num.lower() == "cancel":
             print("order cancelled.")
             return
         try:
-            table_id = int(table_id)
+            table_num = int(table_num)
             break
         except ValueError:
-            print("ID must be a number. Try again.")
+            print("table number must be a number. Try again.")
 
-    while True:
-        order_status = input("enter order status:")
-        if order_status not in ["preparing" , "ready", "received", "paid"]:
-            print("enter a valid status")
-            continue
-        break
+    order_status = 'received'
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute ("select * from tables where id = %s  and status = 'available'",
-                 (table_id,))
+    cur.execute ("select id, status from tables where table_number = %s  and status = 'available'",
+                 (table_num,))
     exist = cur.fetchone()
-    if exist:
-        cur.execute (
-         "INSERT INTO orders (table_id , status) VALUES (%s,%s)",
-         (table_id,order_status)
-         )
-        order_id = cur.lastrowid or "unknown"
-        print(f"order #{order_id} registered for table #{table_id}")
-        cur.execute (
-            "update tables set status = 'occupied' where id = %s",
-            (table_id,))
-    else:
-        print("table not found or occupied")
+    if not exist:
+        print(f"table {table_num} not found or occupied")
+        cur.close()
+        conn.close()
+        return
     
+    cur.execute (
+         "INSERT INTO orders (table_id , status) VALUES (%s,%s) returning id",
+         (exist[0], order_status)
+         )
+        
+    order_id = cur.fetchone()[0]
+    print(f"order #{order_id} registered for table #{table_num}")
+    cur.execute (
+            "update tables set status = 'occupied' where table_number = %s",
+            (table_num,))
+    
+
+    total_items = 0    
+    while True:
+        show_menu()
+        item_input = input("\ninput item id")
+        if item_input == "0":
+            if total_items == 0:
+                print("Order must have at least one item!")
+                continue 
+            break
+        total_items += 1
+        try:
+            item_id = int(item_input)
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
+        cur.execute("SELECT name, price FROM menu_items WHERE id = %s", (item_id,))
+        item = cur.fetchone()
+        
+        if not item:
+            print(f"Item {item_id} not found in menu!")
+            continue
+        while True:
+            quantity_input = input("Enter quantity:")
+            try:
+                quantity = int(quantity_input)
+                if quantity <= 0:
+                    print("Quantity must be greater than 0!")
+                    continue
+                break
+            except ValueError:
+                print("Please enter a valid number.")
+        cur.execute("insert into order_details (order_id, item_id, quantity) values (%s, %s, %s)", (order_id, item_id, quantity))
+        print(f"Added {quantity}x {item[0]}")
     conn.commit()
     cur.close()
     conn.close()
+    print(f" Order {order_id} completed with {total_items} items!")
 
 def update_order_status():
     while True:
@@ -269,8 +303,7 @@ def update_order_status():
              (new_status, or_id))
     if new_status == 'paid':
         cur.execute (
-            "update tables set status = 'available' from orders where orders.id = %s and tables.id= orders.table_id",
-            (or_id,))
+            "update tables set status = 'available' where id = (select table_id from orders where id =%s)", (or_id,) )
     
     if cur.rowcount == 0:
         print("id not found")
@@ -279,7 +312,7 @@ def update_order_status():
     conn.commit()
     cur.close()
     conn.close()
-#============================================================
+#==============================================================================
 #Reporting 
 
 #show active order
@@ -300,20 +333,42 @@ def show_active_orders():
 
 #show details order
 def show_order_details():
+    while True:
+        order_id = input("Enter Order ID: ")
+        if order_id.lower() == "cancel":
+            print("Cancelled.")
+            return
+        try:
+            order_id = int(order_id)
+            break
+        except ValueError:
+            print("Please enter a valid number.")
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "select order_details.*, menu_items.name, menu_items.price from order_details join menu_items on order_details.item_id = menu_items.id")
-    print("\n---Order details---")
+        """select order_details.*, menu_items.name, menu_items.price
+          from order_details
+          join menu_items on order_details.item_id = menu_items.id 
+          where order_details.order_id = %s""", (order_id,))
+    print(f"\n---Order {order_id} details---")
     print("===================================")
     print("  ID  |  order_id  |  item_id  |  name  |  quantity  |  price  ")
     print("-------------------------------------------------------------------------")
-
+    total = 0
+    found = False
     for i in cur:
         print(f"{i[0]} |  {i[1]} |  {i[2]}  |  {i[3]}  |  {i[4]}  |  {i[5]}  |")
+        total += i[4] * i[5]
+        found = True
+    
+    print("===================================")
+    if found:
+        print(f"TOTAL: {total}")
+    else:
+        print(f"No items found for Order #{order_id}")
     cur.close()
     conn.close()
-    print("===================================")
 
 #report daily sales    
 def get_daily_sales_report():
@@ -346,3 +401,60 @@ def get_daily_sales_report():
     conn.close()
     print("===================================")
 #==========================================================================
+
+#CLI
+
+def manage_tables_menu():
+    while True:
+        print("\n--- Table Management ---")
+        print("1. Add a new table")
+        print("2. Remove a table")
+        print("3. Back to main menu")
+        choice = input("Enter your choice: ")
+        if choice == "1":
+            add_table()
+        elif choice == "2":
+            remove_table()
+        elif choice == "3":
+            break
+        else:
+            print("Invalid choice!")
+
+def main_menu():
+    while True:
+        print("===================================")
+        print("\n---Restaurant Management System---")
+        print("===================================")
+        print("1. Show Menu")
+        print("2. Show Table Status")
+        print("3. Add New Order")
+        print("4. Update Order Status")
+        print("5. View Order Details & Total Price")
+        print("6. Show Daily Sales Report")
+        print("7. Manage Tables")
+        print("8. Exit")
+        print("--------------------------------------------")
+        choice = input("select an option (1-8):")
+        if choice == "1":
+            show_menu()
+        elif choice == "2":
+            show_tables_status()
+        elif choice == "3":
+            add_order()
+        elif choice == "4":
+            update_order_status()
+        elif choice == "5":
+            show_order_details()
+        elif choice == "6":
+            get_daily_sales_report()
+        elif choice == "7":
+            manage_tables_menu()
+        elif choice == "8":
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice!")
+
+# Run main menu when file is executed directly
+if __name__ == "__main__":
+    main_menu()
